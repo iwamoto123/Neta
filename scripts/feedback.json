@@ -1,6 +1,14 @@
 {
   "version": 1,
-  "liked_urls": [],
+  "liked_urls": [
+    "https://note.com/fukagawakosuke/n/nf180e8290cfe",
+    "https://note.com/pd_m/n/n3aec1a8bf3cc",
+    "https://blog.allstarsaas.com/posts/2022bootcamp-pmf",
+    "https://enpreth.jp/media/saas-legacy-industry/",
+    "https://note.com/horishou/n/n75e0ec39d268",
+    "https://www.docswell.com/s/6649915/5R2EJ2-2024-12-08-172152",
+    "https://x.com/verylongedu/status/2016431162013712837?s=46"
+  ],
   "keyword_weights": {},
   "last_updated": "2026-02-08T21:07:58.088398+09:00"
 }

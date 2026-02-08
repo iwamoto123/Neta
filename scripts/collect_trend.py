@@ -660,7 +660,7 @@ def build_markdown(
     lines.append(f"# トレンドネタ: {date_str}")
     lines.append("")
 
-    for section_name in ["Product Hunt", "note", "資金調達", "Exit/M&A", "科学・哲学", "X"]:
+    for section_name in ["Product Hunt", "note", "新規事業", "資金調達", "Exit/M&A", "科学・哲学", "X"]:
         items = sections.get(section_name) or []
         if not items:
             continue
@@ -780,7 +780,7 @@ def build_dashboard_html(*, day: dt.date, out_dir: Path, md_filename: str, featu
     recent = sorted(out_dir.glob("*-trend.md"), reverse=True)[:14]
     recent_links = "\n".join(f"<li><a href='{esc(p.name)}'>{esc(p.name)}</a></li>" for p in recent)
 
-    order = ["Product Hunt", "note", "資金調達", "Exit/M&A", "科学・哲学", "X"]
+    order = ["Product Hunt", "note", "新規事業", "資金調達", "Exit/M&A", "科学・哲学", "X"]
     nav_sections = [s for s in order if (featured.get(s) or [])]
     nav = " ".join(f"<a href='#{esc(s)}'>{esc(s)}</a>" for s in nav_sections)
 
