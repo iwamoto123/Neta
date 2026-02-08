@@ -707,6 +707,204 @@ def escape_md(s: str) -> str:
     return (s or "").replace("|", "\\|").replace("\n", " ").strip()
 
 
+def extract_featured_from_markdown(md: str) -> dict[str, list[dict[str, str]]]:
+    """
+    Extract featured rows from the generated markdown.
+    Returns: {section_name: [{title,url,metric,stars,category,memo}, ...]}
+    """
+    featured: dict[str, list[dict[str, str]]] = {}
+    section = ""
+    in_featured = False
+    rows_seen = 0
+
+    def parse_row(line: str) -> dict[str, str] | None:
+        # | [Title](URL) | metric | stars | category | memo |
+        parts = [p.strip() for p in line.strip().strip("|").split("|")]
+        if len(parts) < 5:
+            return None
+        m = re.search(r"\[(?P<title>.*?)\]\((?P<url>.*?)\)", parts[0])
+        if not m:
+            return None
+        return {
+            "title": m.group("title").strip(),
+            "url": m.group("url").strip(),
+            "metric": parts[1],
+            "stars": parts[2],
+            "category": parts[3],
+            "memo": parts[4],
+        }
+
+    for raw in md.splitlines():
+        line = raw.strip("\n")
+        if line.startswith("## "):
+            section = line[3:].strip()
+            in_featured = False
+            rows_seen = 0
+            continue
+        if line.strip() == "### 注目トピック":
+            in_featured = True
+            rows_seen = 0
+            continue
+        if in_featured:
+            if line.startswith("| タイトル"):
+                continue
+            if line.startswith("|---------"):
+                continue
+            if not line.startswith("|"):
+                in_featured = False
+                continue
+            row = parse_row(line)
+            if row and section:
+                featured.setdefault(section, []).append(row)
+                rows_seen += 1
+            if rows_seen >= 20:
+                in_featured = False
+
+    return featured
+
+
+def build_dashboard_html(*, day: dt.date, out_dir: Path, md_filename: str, featured: dict[str, list[dict[str, str]]]) -> str:
+    date_str = day.strftime("%Y-%m-%d")
+    title = f"Daily Trend Dashboard - {date_str}"
+
+    def esc(s: str) -> str:
+        return (
+            (s or "")
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+
+    # Recent daily files (relative links)
+    recent = sorted(out_dir.glob("*-trend.md"), reverse=True)[:14]
+    recent_links = "\n".join(f"<li><a href='{esc(p.name)}'>{esc(p.name)}</a></li>" for p in recent)
+
+    order = ["Product Hunt", "note", "資金調達", "Exit/M&A", "科学・哲学", "X"]
+    nav_sections = [s for s in order if (featured.get(s) or [])]
+    nav = " ".join(f"<a href='#{esc(s)}'>{esc(s)}</a>" for s in nav_sections)
+
+    def section_block(name: str) -> str:
+        rows = featured.get(name) or []
+        if not rows:
+            return ""
+        trs = "\n".join(
+            f"<tr>"
+            f"<td class='title'><a href='{esc(r['url'])}' target='_blank' rel='noopener noreferrer'>{esc(r['title'])}</a></td>"
+            f"<td class='metric'>{esc(r['metric'])}</td>"
+            f"<td class='stars'>{esc(r['stars'])}</td>"
+            f"<td class='cat'>{esc(r['category'])}</td>"
+            f"<td class='memo'>{esc(r['memo'])}</td>"
+            f"</tr>"
+            for r in rows
+        )
+        return f"""
+<section class="card" id="{esc(name)}">
+  <div class="card-h">
+    <h2>{esc(name)}</h2>
+    <a class="jump" href="#top">↑</a>
+  </div>
+  <table>
+    <thead>
+      <tr><th>タイトル</th><th>指標</th><th>興味度</th><th>カテゴリ</th><th>メモ</th></tr>
+    </thead>
+    <tbody>
+      {trs}
+    </tbody>
+  </table>
+</section>
+""".strip()
+
+    blocks = "\n".join(section_block(s) for s in nav_sections if section_block(s))
+    generated_at = dt.datetime.now(tz=JST).isoformat()
+
+    return f"""<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{esc(title)}</title>
+  <style>
+    :root {{
+      --bg: #0b1020;
+      --card: rgba(255,255,255,0.06);
+      --txt: rgba(255,255,255,0.92);
+      --muted: rgba(255,255,255,0.62);
+      --line: rgba(255,255,255,0.12);
+      --accent: #7dd3fc;
+    }}
+    body {{
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans JP", "Hiragino Sans", "Helvetica Neue", Arial, sans-serif;
+      color: var(--txt);
+      background: radial-gradient(1200px 600px at 20% 0%, #12214a 0%, var(--bg) 60%);
+    }}
+    a {{ color: var(--accent); text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    .wrap {{ max-width: 1100px; margin: 0 auto; padding: 24px; }}
+    header {{ display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: baseline; justify-content: space-between; }}
+    h1 {{ margin: 0; font-size: 22px; letter-spacing: 0.2px; }}
+    .meta {{ color: var(--muted); font-size: 13px; }}
+    .nav {{ display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 22px; }}
+    .nav a {{ padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; }}
+    .grid {{ display: grid; grid-template-columns: 1fr; gap: 16px; }}
+    .card {{ background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; overflow: hidden; }}
+    .card-h {{ display: flex; align-items: center; justify-content: space-between; gap: 8px; }}
+    h2 {{ margin: 0; font-size: 16px; }}
+    .jump {{ color: var(--muted); font-size: 12px; }}
+    table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+    th, td {{ border-top: 1px solid var(--line); padding: 10px 8px; vertical-align: top; }}
+    th {{ text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; }}
+    td {{ font-size: 13px; }}
+    td.title {{ width: 44%; }}
+    td.metric {{ width: 12%; color: var(--muted); }}
+    td.stars {{ width: 8%; }}
+    td.cat {{ width: 14%; color: var(--muted); }}
+    td.memo {{ width: 22%; color: var(--muted); }}
+    .footer {{ margin-top: 18px; color: var(--muted); font-size: 12px; }}
+    .recent {{ margin-top: 16px; }}
+    .recent ul {{ margin: 8px 0 0; padding-left: 18px; }}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="top">
+    <header>
+      <div>
+        <h1>{esc(title)}</h1>
+        <div class="meta">注目トピックのみ表示（詳細はMarkdownへ）</div>
+      </div>
+      <div class="meta">
+        <a href="{esc(md_filename)}">今日のMarkdownを開く</a>
+      </div>
+    </header>
+
+    <nav class="nav">
+      {nav}
+    </nav>
+
+    <div class="grid">
+      {blocks}
+    </div>
+
+    <div class="card recent">
+      <div class="card-h">
+        <h2>最近のtrend.md</h2>
+        <a class="jump" href="#top">↑</a>
+      </div>
+      <ul>
+        {recent_links}
+      </ul>
+    </div>
+
+    <div class="footer">
+      Generated at {esc(generated_at)}
+    </div>
+  </div>
+</body>
+</html>
+""".strip() + "\n"
+
+
 def sectionize(items: list[Item]) -> dict[str, list[Item]]:
     sections: dict[str, list[Item]] = {}
     for it in items:
@@ -811,6 +1009,10 @@ def main() -> int:
 
     print("ネタ収集完了。")
     changed = write_if_changed(out_path, md)
+    # Dashboard (local open / optional GitHub Pages)
+    featured = extract_featured_from_markdown(md)
+    dashboard = build_dashboard_html(day=day, out_dir=out_dir, md_filename=out_path.name, featured=featured)
+    write_if_changed(out_dir / "index.html", dashboard)
     print(f"Wrote: {out_path.relative_to(REPO_ROOT)} (changed={changed})")
     return 0
 

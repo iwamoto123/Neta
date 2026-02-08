@@ -17,6 +17,16 @@ python3 -m pip install requests
 python scripts/collect_trend.py
 ```
 
+## ローカル用ダッシュボード（GitHub Pages不要）
+
+`collect_trend.py` は `ideas/daily/index.html`（注目トピックまとめ）も毎回生成します。
+
+ローカルでブラウザを開く:
+
+```bash
+python scripts/open_dashboard.py
+```
+
 ## note の「フォロー中」初回取り込み
 
 `scripts/trend_sources.json` の `note.followings_url` が設定されていて `note.users` が空の場合、初回だけ `followings_url` を参照して `note.users` を自動生成します。
