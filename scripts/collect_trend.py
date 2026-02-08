@@ -688,10 +688,15 @@ def build_markdown(
 
         lines.append("### 全エントリー")
         lines.append("")
+        lines.append("<details>")
+        lines.append("<summary>クリックで展開</summary>")
+        lines.append("")
         for idx, (score, it, stars, cat) in enumerate(all_items, start=1):
             metric = it.metric or (it.published[:10] if it.published else "")
             extra = f"{metric} - {it.source}".strip(" -")
             lines.append(f"{idx}. [{escape_md(it.title)}]({it.url}) - {escape_md(extra)}")
+        lines.append("")
+        lines.append("</details>")
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
