@@ -18,7 +18,29 @@
       "科学",
       "哲学"
     ],
-    "users": []
+    "users": [
+      "21jinoai",
+      "600jp",
+      "autointellimode",
+      "biisansyacho",
+      "burry_mr",
+      "fromdusktildawn",
+      "instahuck",
+      "kenichiro_hara",
+      "maochil",
+      "masa_enshacho",
+      "nakaji_memo",
+      "pd_m",
+      "shift_tanges001",
+      "taimee",
+      "takechannel",
+      "terms",
+      "udaikamomental",
+      "vetematsu",
+      "youtubereserch",
+      "yuyamurakami"
+    ],
+    "followings_initialized_at": "2026-02-08T21:07:58.684660+09:00"
   },
   "producthunt": {
     "enabled": true,
@@ -54,5 +76,3 @@
     "max_all_per_section": 20
   }
 }
-
-
