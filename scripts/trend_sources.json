@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "note": {
+    "followings_url": "https://note.com/takechannel/followings",
+    "followings_init_mode": "once",
+    "tags": [
+      "新規事業",
+      "起業",
+      "AI",
+      "生成AI",
+      "プロダクト",
+      "Product Hunt",
+      "資金調達",
+      "M&A",
+      "企業売却",
+      "バイアウト",
+      "仕事論",
+      "科学",
+      "哲学"
+    ],
+    "users": []
+  },
+  "producthunt": {
+    "enabled": true,
+    "feed_url": "https://www.producthunt.com/feed",
+    "max_items": 20
+  },
+  "rss_sites": [
+    {
+      "name": "ラッコM&A",
+      "category": "Exit/M&A",
+      "url": "https://rakkoma.com/"
+    },
+    {
+      "name": "STARTUP DB",
+      "category": "資金調達",
+      "url": "https://startup-db.com/"
+    },
+    {
+      "name": "Startup-IL",
+      "category": "資金調達",
+      "url": "https://startup-il.com/"
+    }
+  ],
+  "x": {
+    "enabled": true,
+    "article_urls": [],
+    "article_authors": [],
+    "max_items": 10
+  },
+  "output": {
+    "dir": "ideas/daily",
+    "max_featured_per_section": 5,
+    "max_all_per_section": 20
+  }
+}
+
+

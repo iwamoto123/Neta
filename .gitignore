@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+
+# Secrets / cookies (絶対にGitに入れない)
+cookies_x.json
+*.cookies.json
+
+
