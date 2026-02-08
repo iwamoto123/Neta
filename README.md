@@ -2,6 +2,23 @@
 
 毎日自動でトレンド情報を収集し、`ideas/daily/YYYYMMDD-trend.md` を生成します。
 
+## 運用方法（現在）
+
+- **毎日の自動実行**: GitHub Actions（`.github/workflows/daily-trend.yml`）
+  - **実行時刻**: 毎日 **JST 08:00**（workflowのcronは **UTC 23:00**）
+  - **実行内容**: `python scripts/collect_trend.py`
+  - **保存**: 差分がある場合のみ **自動commit & push**
+- **成果物（収集データ）**
+  - **日次Markdown**: `ideas/daily/YYYYMMDD-trend.md`
+  - **まとめページ（ローカル/任意）**: `ideas/daily/index.html`（注目トピックのみ）
+- **情報源の追加/変更（手で触る場所）**: `scripts/trend_sources.json`
+  - **note**: `note.tags` / `note.users` を編集
+  - **資金調達/Exitサイト**: `rss_sites` を編集（RSSが見つかれば自動取得、見つからなければスキップ）
+  - **X（記事）**: `x.article_urls`（`https://x.com/i/articles/...`）または `x.article_authors`（`@id`）を編集
+- **好みに寄せる（URL貼り学習）**: `scripts/feedback.json`
+  - `liked_urls` に「良かったURL」を追加 → 次回実行でキーワード重みを更新し、興味度（★）に反映
+- **注意**: Cookieなどの機密情報は **絶対にGitにコミットしない**（`.gitignore` で `cookies_x.json` / `*.cookies.json` を無視）
+
 ## 構成（最小）
 
 - `scripts/collect_trend.py`: 収集 & Markdown生成
