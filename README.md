@@ -79,6 +79,18 @@ python3 scripts/convert_cookies.py
 
 Secretが入っている場合のみ、Workflowが Playwright をインストールしてX収集を試みます。
 
+## X（直近24h）を取る（Grok / xAI API）
+
+`XAI_API_KEY` が設定されている場合、`collect_trend.py` は **Grok（xAI API）を優先**して「直近24時間のX投稿」を興味領域に合わせて収集し、`X` セクションに出力します。
+
+### GitHub Secrets
+
+リポジトリの Secrets に以下を追加:
+
+- `XAI_API_KEY`: xAI APIキー
+
+※キーは絶対にコードやリポジトリにコミットしないでください。
+
 ### 3) 追跡する記事URL/著者
 
 `scripts/trend_sources.json` の以下を編集してください：

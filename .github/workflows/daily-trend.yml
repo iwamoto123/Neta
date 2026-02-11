@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 15
     env:
       X_COOKIES_JSON: ${{ secrets.X_COOKIES_JSON }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:

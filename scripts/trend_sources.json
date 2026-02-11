@@ -80,6 +80,14 @@
     "article_authors": [],
     "max_items": 10
   },
+  "xai": {
+    "enabled": true,
+    "hours": 24,
+    "count": 12,
+    "endpoint": "https://api.x.ai/v1/chat/completions",
+    "model": "grok-2-latest",
+    "language": "ja"
+  },
   "output": {
     "dir": "ideas/daily",
     "max_featured_per_section": 5,

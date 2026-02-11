@@ -41,6 +41,7 @@ class Item:
     metric: str = ""
     published: str = ""
     tags: list[str] | None = None
+    memo: str = ""
 
 
 class SimpleLinkRelFeedParser(HTMLParser):
@@ -654,6 +655,7 @@ def build_markdown(
     keyword_weights: dict[str, float],
     max_featured: int,
     max_all: int,
+    section_preludes: dict[str, str] | None = None,
 ) -> str:
     date_str = day.strftime("%Y-%m-%d")
     lines: list[str] = []
@@ -676,13 +678,16 @@ def build_markdown(
 
         lines.append(f"## {section_name}")
         lines.append("")
+        if section_preludes and section_preludes.get(section_name):
+            lines.append(section_preludes[section_name].rstrip())
+            lines.append("")
         lines.append("### 注目トピック")
         lines.append("")
         lines.append("| タイトル | 指標 | 興味度 | カテゴリ | メモ |")
         lines.append("|---------|------|--------|----------|------|")
         for score, it, stars, cat in featured:
             metric = it.metric or (it.published[:10] if it.published else "")
-            memo = f"{it.source}".strip()
+            memo = (it.memo or it.source).strip()
             lines.append(f"| [{escape_md(it.title)}]({it.url}) | {escape_md(metric)} | {stars} | {escape_md(cat)} | {escape_md(memo)} |")
         lines.append("")
 
@@ -705,6 +710,262 @@ def build_markdown(
 def escape_md(s: str) -> str:
     # Keep it minimal for tables
     return (s or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def xai_chat_completions(*, endpoint: str, api_key: str, model: str, messages: list[dict[str, str]], timeout: int = 60) -> str:
+    """
+    xAI API (Grok) chat completions. Endpoint is configurable in trend_sources.json.
+    Expected to be OpenAI-compatible JSON.
+    """
+    url = endpoint.rstrip("/")
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    payload: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": 0.2,
+    }
+    res = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    res.raise_for_status()
+    data = res.json()
+    # OpenAI compatible: choices[0].message.content
+    try:
+        return str(data["choices"][0]["message"]["content"])
+    except Exception:
+        return json.dumps(data, ensure_ascii=False)
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """
+    Best-effort: extract first top-level JSON object from model output.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if s.startswith("{") and s.endswith("}"):
+        try:
+            return json.loads(s)
+        except Exception:
+            pass
+    # try to locate a JSON object substring
+    start = s.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    for i in range(start, len(s)):
+        ch = s[i]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                chunk = s[start : i + 1]
+                try:
+                    return json.loads(chunk)
+                except Exception:
+                    return None
+    return None
+
+
+def collect_x_via_xai(sources: dict[str, Any], *, api_key: str | None, now: dt.datetime) -> tuple[list[Item], str]:
+    """
+    Use Grok (xAI API) to search/summarize X in last N hours and return:
+      - Items for the usual X table
+      - A markdown prelude (clusters/conclusions/materials) to be inserted under ## X
+    """
+    xai = sources.get("xai") or {}
+    if not xai.get("enabled", True):
+        return [], ""
+    if not api_key:
+        return [], ""
+
+    hours = int(xai.get("hours", 24))
+    count = int(xai.get("count", 12))
+    endpoint = str(xai.get("endpoint") or "https://api.x.ai/v1/chat/completions")
+    model = str(xai.get("model") or "grok-2-latest")
+    lang = str(xai.get("language") or "ja")
+
+    since = now - dt.timedelta(hours=hours)
+    since_iso = since.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    until_iso = now.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Use note tags as a lightweight expression of interests
+    note = sources.get("note") or {}
+    tags = note.get("tags") or []
+    tag_line = ", ".join(tags[:30])
+
+    topic = (
+        "新規事業/新規事業の作り方、最新のAI系プロダクト、バイアウト・企業売却・M&Aのナレッジ、"
+        "仕事論、科学・哲学系ニュース"
+    )
+
+    user_prompt = f"""
+目的: X上の直近{hours}時間（{since_iso}〜{until_iso} UTC）の投稿から、以下の興味に合う「投稿ネタになりそうな素材」を抽出する。
+
+興味（固定）:
+- {topic}
+興味（タグ）:
+- {tag_line}
+
+要件:
+- 期間は必ず直近{hours}時間の範囲を優先（古い投稿は避ける）
+- できるだけ一次情報/公式発表/本人発言を優先。不確かなゴシップは避け、裏が取れない場合は「未確認」と明記
+- 投資助言に見える表現は禁止（買い/売り推奨、株価や価格の目標など）
+- 出力は必ず JSON のみ（前後に文章を付けない）
+- 言語は基本{lang}（固有名詞は原語OK）
+
+出力JSONスキーマ:
+{{
+  "clusters": [
+    {{
+      "name": "クラスター名",
+      "summary": "何が論点か（1-2行）",
+      "representative_urls": ["https://x.com/..."],
+      "key_phrases": ["言い回し（短い言い換え）"]
+    }}
+  ],
+  "conclusions": ["狙うべきテーマ1", "テーマ2", "テーマ3"],
+  "materials": [
+    {{
+      "url": "https://x.com/... (投稿URL)",
+      "title": "素材のタイトル/角度（短く）",
+      "summary": "要約（1-2行）",
+      "metrics": {{"likes": "unknown", "reposts": "unknown", "replies": "unknown", "views": "unknown"}},
+      "why": ["なぜ伸びたか仮説1", "仮説2"],
+      "ideas": {{"investor": "投資家向けネタ案1つ", "engineer": "エンジニア向けネタ案1つ"}},
+      "hooks": ["フック案1", "フック案2", "フック案3"],
+      "note": "注意点があれば1行（なければ空文字）"
+    }}
+  ],
+  "urls": ["https://x.com/...", "..."]
+}}
+
+materials は最大 {count} 件にして。
+""".strip()
+
+    messages = [
+        {"role": "system", "content": "You are a careful research assistant. Return only valid JSON."},
+        {"role": "user", "content": user_prompt},
+    ]
+
+    try:
+        content = xai_chat_completions(endpoint=endpoint, api_key=api_key, model=model, messages=messages, timeout=90)
+        data = _extract_json_object(content) or {}
+    except Exception as e:
+        return [], f"> Grok取得に失敗: {escape_md(str(e))}"
+
+    clusters = data.get("clusters") or []
+    conclusions = data.get("conclusions") or []
+    materials = data.get("materials") or []
+
+    # Prelude markdown
+    pre_lines: list[str] = []
+    pre_lines.append("### タイムラインの空気（Grok / 直近24h）")
+    pre_lines.append("")
+    if isinstance(clusters, list) and clusters:
+        for c in clusters[:5]:
+            if not isinstance(c, dict):
+                continue
+            name = str(c.get("name") or "").strip() or "cluster"
+            summary = str(c.get("summary") or "").strip()
+            reps = c.get("representative_urls") or []
+            key_phrases = c.get("key_phrases") or []
+            pre_lines.append(f"- **{escape_md(name)}**: {escape_md(summary)}")
+            if isinstance(reps, list) and reps:
+                rep_s = ", ".join(f"[link]({u})" for u in reps[:2] if isinstance(u, str) and u.startswith("http"))
+                if rep_s:
+                    pre_lines.append(f"  - 代表: {rep_s}")
+            if isinstance(key_phrases, list) and key_phrases:
+                kp = ", ".join(escape_md(str(x)) for x in key_phrases[:3])
+                if kp:
+                    pre_lines.append(f"  - 言い回し: {kp}")
+    else:
+        pre_lines.append("- 取得なし（またはJSONパース失敗）")
+    pre_lines.append("")
+
+    if isinstance(conclusions, list) and conclusions:
+        pre_lines.append("### 今日の結論（狙うべき3テーマ）")
+        pre_lines.append("")
+        for x in conclusions[:3]:
+            pre_lines.append(f"- {escape_md(str(x))}")
+        pre_lines.append("")
+
+    # Materials detail (collapsed)
+    pre_lines.append("### 素材一覧（Grok）")
+    pre_lines.append("")
+    pre_lines.append("<details>")
+    pre_lines.append("<summary>クリックで展開</summary>")
+    pre_lines.append("")
+
+    items: list[Item] = []
+    if isinstance(materials, list):
+        for m in materials[:count]:
+            if not isinstance(m, dict):
+                continue
+            url = str(m.get("url") or "").strip()
+            if not url.startswith("http"):
+                continue
+            title = str(m.get("title") or "").strip() or "X素材"
+            summary = str(m.get("summary") or "").strip()
+            metrics = m.get("metrics") or {}
+            likes = (metrics.get("likes") if isinstance(metrics, dict) else None) if metrics else None
+            reposts = (metrics.get("reposts") if isinstance(metrics, dict) else None) if metrics else None
+            replies = (metrics.get("replies") if isinstance(metrics, dict) else None) if metrics else None
+            views = (metrics.get("views") if isinstance(metrics, dict) else None) if metrics else None
+
+            metric_parts = []
+            if likes not in (None, ""):
+                metric_parts.append(f"likes={likes}")
+            if reposts not in (None, ""):
+                metric_parts.append(f"reposts={reposts}")
+            if replies not in (None, ""):
+                metric_parts.append(f"replies={replies}")
+            if views not in (None, ""):
+                metric_parts.append(f"views={views}")
+            metric_str = ", ".join(metric_parts) if metric_parts else ""
+
+            items.append(
+                Item(
+                    source="X (Grok)",
+                    section="X",
+                    title=normalize_space(title),
+                    url=url,
+                    metric=metric_str,
+                    memo=normalize_space(summary),
+                )
+            )
+
+            pre_lines.append(f"- [{escape_md(title)}]({url})")
+            if summary:
+                pre_lines.append(f"  - 要約: {escape_md(summary)}")
+            if metric_str:
+                pre_lines.append(f"  - 指標: {escape_md(metric_str)}")
+            why = m.get("why") or []
+            if isinstance(why, list) and why:
+                pre_lines.append(f"  - なぜ伸びたか: {escape_md(' / '.join(str(x) for x in why[:3]))}")
+            ideas = m.get("ideas") or {}
+            if isinstance(ideas, dict) and (ideas.get("investor") or ideas.get("engineer")):
+                inv = ideas.get("investor") or ""
+                eng = ideas.get("engineer") or ""
+                if inv:
+                    pre_lines.append(f"  - 投資家向け案: {escape_md(str(inv))}")
+                if eng:
+                    pre_lines.append(f"  - エンジニア向け案: {escape_md(str(eng))}")
+            hooks = m.get("hooks") or []
+            if isinstance(hooks, list) and hooks:
+                pre_lines.append(f"  - フック: {escape_md(' / '.join(str(x) for x in hooks[:3]))}")
+            note2 = m.get("note")
+            if isinstance(note2, str) and note2.strip():
+                pre_lines.append(f"  - 注意: {escape_md(note2.strip())}")
+
+    pre_lines.append("")
+    pre_lines.append("</details>")
+    pre_lines.append("")
+
+    return items, "\n".join(pre_lines).rstrip()
 
 
 def extract_featured_from_markdown(md: str) -> dict[str, list[dict[str, str]]]:
@@ -986,7 +1247,14 @@ def main() -> int:
     items.extend(collect_producthunt(sources))
     items.extend(collect_note(sources))
     items.extend(collect_rss_sites(sources))
-    items.extend(collect_x_articles(sources, cookies_json=os.environ.get("X_COOKIES_JSON")))
+    section_preludes: dict[str, str] = {}
+    xai_items, xai_prelude = collect_x_via_xai(sources, api_key=os.environ.get("XAI_API_KEY"), now=dt.datetime.now(tz=JST))
+    if xai_items:
+        items.extend(xai_items)
+        if xai_prelude:
+            section_preludes["X"] = xai_prelude
+    else:
+        items.extend(collect_x_articles(sources, cookies_json=os.environ.get("X_COOKIES_JSON")))
     items = unique_items(items)
 
     # Route RSS site sections by category already; additionally, put note into "note"
@@ -1005,6 +1273,7 @@ def main() -> int:
         keyword_weights=keyword_weights,
         max_featured=max_featured,
         max_all=max_all,
+        section_preludes=section_preludes,
     )
 
     print("ネタ収集完了。")
